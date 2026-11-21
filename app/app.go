@@ -3058,6 +3058,13 @@ func (m *Model) update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 		pa, notice := m.actionManager.HandleDeleteEmailMsg(msg, folderName)
 		return m, tea.Batch(flushCmd, m.actionManager.StartActionGracePeriod(pa, notice))
 
+	case tui.ReloadThemeMsg:
+		if m.config != nil && m.config.Theme != "" {
+			theme.SetTheme(m.config.Theme)
+			tui.RebuildStyles()
+		}
+		return m, nil
+
 	case tui.NavigateEmailMsg:
 		if m.folderInbox != nil {
 			if cmd := m.folderInbox.OpenAdjacent(msg.Delta); cmd != nil {

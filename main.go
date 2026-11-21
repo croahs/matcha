@@ -41,6 +41,7 @@ var (
 )
 
 func main() {
+	ignoreThemeSignal()
 	termimage.MaybeRunWorker()
 
 	updater.SetVersion(version)
@@ -102,6 +103,7 @@ func main() {
 	go view.PrimeImageDetection()
 
 	p := tea.NewProgram(initialModel)
+	reloadThemeOnSignal(p)
 	if _, err := p.Run(); err != nil {
 		plugins.Close()
 		if errors.Is(err, tea.ErrProgramPanic) {

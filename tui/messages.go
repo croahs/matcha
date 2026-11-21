@@ -305,6 +305,9 @@ type DeleteEmailMsg struct {
 	Mailbox   MailboxKind
 }
 
+// ReloadThemeMsg asks the UI to re-read the active theme from disk.
+type ReloadThemeMsg struct{}
+
 // NavigateEmailMsg asks to open the next (Delta 1) or previous (Delta -1)
 // email in the current folder list.
 type NavigateEmailMsg struct {
