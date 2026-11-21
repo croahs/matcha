@@ -889,11 +889,21 @@ func (m *EmailView) renderHelp() string {
 
 	var shortcuts strings.Builder
 	shortcuts.WriteString(joinHelp(
+		helpItem("", "n/p", "next/prev"),
+		helpItem("", kbKey(kb.Email.Archive, "a"), "archive"),
+	))
+	for _, pk := range m.pluginKeyBindings {
+		shortcuts.WriteString(helpSeparator)
+		shortcuts.WriteString(pk.Key)
+		shortcuts.WriteString(": ")
+		shortcuts.WriteString(pk.Description)
+	}
+	shortcuts.WriteString(helpSeparator)
+	shortcuts.WriteString(joinHelp(
 		helpItem("", kbKey(kb.Email.Reply, "r"), "reply"),
 		helpItem("", kbKey(kb.Email.ReplyAll, "shift+r"), "reply all"),
 		helpItem("", kbKey(kb.Email.Forward, "f"), "forward"),
 		helpItem("", kbKey(kb.Email.Delete, "d"), "delete"),
-		helpItem("", kbKey(kb.Email.Archive, "a"), "archive"),
 	))
 	if len(m.email.Attachments) > 0 {
 		shortcuts.WriteString(helpSeparator)
@@ -921,12 +931,6 @@ func (m *EmailView) renderHelp() string {
 			shortcuts.WriteString(helpSeparator)
 			shortcuts.WriteString(helpItem("", m.loadRemoteImagesKey(), "retry remote images").String())
 		}
-	}
-	for _, pk := range m.pluginKeyBindings {
-		shortcuts.WriteString(helpSeparator)
-		shortcuts.WriteString(pk.Key)
-		shortcuts.WriteString(": ")
-		shortcuts.WriteString(pk.Description)
 	}
 	if m.pluginStatus != "" {
 		shortcuts.WriteString(helpSeparator)

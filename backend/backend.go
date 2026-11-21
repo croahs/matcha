@@ -120,6 +120,7 @@ type SearchQuery struct {
 	Before     time.Time
 	LargerThan int
 	Limit      uint32
+	Unread     bool
 }
 
 // ParseSearchQuery parses a compact search DSL into a SearchQuery.
@@ -150,6 +151,12 @@ func ParseSearchQuery(s string) SearchQuery {
 		case "before":
 			if t, ok := parseSearchDate(value); ok {
 				query.Before = t
+			}
+		case "is":
+			if strings.EqualFold(value, "unread") {
+				query.Unread = true
+			} else {
+				bodyTerms = append(bodyTerms, term)
 			}
 		case "larger":
 			if n, err := strconv.Atoi(value); err == nil && n > 0 {

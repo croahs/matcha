@@ -93,6 +93,14 @@ func (m *Manager) FlagCmds() []tea.Cmd {
 		if account == nil {
 			continue
 		}
+		if m.folderInbox != nil {
+			// Keep the visible list in step so a second toggle sees the new state.
+			if op.Read {
+				m.folderInbox.GetInbox().MarkEmailAsRead(op.UID, op.AccountID)
+			} else {
+				m.folderInbox.GetInbox().MarkEmailAsUnread(op.UID, op.AccountID)
+			}
+		}
 		if op.Read {
 			m.store.MarkEmailAsReadInStores(op.UID, op.AccountID)
 			cmds = append(cmds, m.cmdBuilder.MarkEmailAsReadCmd(account, op.UID, op.AccountID, op.Folder))
@@ -174,14 +182,14 @@ func (m *Manager) HandleKeyBinding(msg tea.KeyPressMsg, current tea.Model, pendi
 			}
 		case *tui.FolderInbox:
 			if email := v.GetInbox().GetSelectedEmail(); email != nil {
-				t := m.plugins.EmailToTable(email.UID, email.From, email.To, email.Subject, email.Date, email.IsRead, email.AccountID, v.GetCurrentFolder())
+				t := m.plugins.EmailToTable(email.UID, email.From, email.To, email.Subject, email.Date, email.IsRead, email.AccountID, m.pluginFolder())
 				m.plugins.CallKeyBinding(binding, t)
 			} else {
 				m.plugins.CallKeyBinding(binding)
 			}
 		case *tui.EmailView:
 			email := v.GetEmail()
-			t := m.plugins.EmailToTable(email.UID, email.From, email.To, email.Subject, email.Date, email.IsRead, email.AccountID, "")
+			t := m.plugins.EmailToTable(email.UID, email.From, email.To, email.Subject, email.Date, email.IsRead, email.AccountID, m.pluginFolder())
 			m.plugins.CallKeyBinding(binding, t)
 		case *tui.Composer:
 			L := m.plugins.LuaState()
@@ -265,4 +273,15 @@ func (m *Manager) ApplyFields(composer *tui.Composer) {
 			composer.SetBody(value)
 		}
 	}
+}
+
+// pluginFolder is the folder handed to plugin key bindings. The folder inbox
+// leaves its current folder empty until one is picked, which is the inbox.
+func (m *Manager) pluginFolder() string {
+	if m.folderInbox != nil {
+		if f := m.folderInbox.GetCurrentFolder(); f != "" {
+			return f
+		}
+	}
+	return "INBOX"
 }

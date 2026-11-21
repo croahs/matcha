@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"github.com/floatpane/matcha/backend"
 	"io"
 	"net/mail"
 	"strings"
@@ -373,12 +374,15 @@ type Inbox struct {
 	pluginStatus       string // Persistent status text set by plugins
 	pluginKeyBindings  []PluginKeyBinding
 	searchOverlay      *SearchOverlay
-	searchActive       bool
-	searchQuery        string
-	searchResults      []fetcher.Email
-	threaded           map[string]bool
-	expanded           map[string]bool
-	defaultThreaded    bool
+	// unreadQuery is set while a one-key unread search is in flight, so its
+	// results are applied without the search overlay.
+	unreadQuery     string
+	searchActive    bool
+	searchQuery     string
+	searchResults   []fetcher.Email
+	threaded        map[string]bool
+	expanded        map[string]bool
+	defaultThreaded bool
 
 	// Visual mode state (Vim-style multi-select)
 	visualMode     bool              // Whether visual mode is active
@@ -521,6 +525,7 @@ func (m *Inbox) updateList() {
 				key.NewBinding(key.WithKeys("right", nextTab), key.WithHelp(joinKeys("→", nextTab), "next tab")),
 			)
 		}
+		bindings = append(bindings, key.NewBinding(key.WithKeys(unreadFilterKey), key.WithHelp(unreadFilterKey, "unread only")))
 		bindings = append(bindings, m.extraShortHelpKeys...)
 		if pk := commandPaletteKey(); pk != "" {
 			bindings = append(bindings, key.NewBinding(key.WithKeys(pk), key.WithHelp(pk, "commands")))
@@ -962,6 +967,18 @@ func (m *Inbox) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 		case searchBinding:
 			m.searchOverlay = NewSearchOverlay(m.width, m.height)
 			return m, m.searchOverlay.Init()
+		case unreadFilterKey:
+			if m.searchActive && m.searchQuery == unreadQueryText {
+				m.searchActive = false
+				m.searchQuery = ""
+				m.searchResults = nil
+				m.updateList()
+				return m, nil
+			}
+			query := backend.ParseSearchQuery(unreadQueryText)
+			m.unreadQuery = query.Raw
+			mailbox, accountID := m.mailbox, m.currentAccountID
+			return m, func() tea.Msg { return SearchRequestedMsg{Query: query, Mailbox: mailbox, AccountID: accountID} }
 		case m.toggleThreadedKey():
 			m.toggleThreaded()
 			m.updateList()
@@ -1128,6 +1145,14 @@ func (m *Inbox) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 		return m, nil
 
 	case SearchResultsMsg:
+		if m.searchOverlay == nil && m.unreadQuery != "" && msg.Query.Raw == m.unreadQuery {
+			m.unreadQuery = ""
+			if msg.Err != nil {
+				return m, func() tea.Msg { return NotifyMsg{Message: msg.Err.Error()} }
+			}
+			query, emails := msg.Query, msg.Emails
+			return m, func() tea.Msg { return ApplySearchResultsMsg{Query: query, Emails: emails} }
+		}
 		if m.searchOverlay == nil {
 			return m, nil
 		}
@@ -1603,6 +1628,11 @@ func (m *Inbox) MarkEmailAsRead(uid uint32, accountID string) {
 			}
 		}
 	}
+	for i := range m.searchResults {
+		if m.searchResults[i].UID == uid && m.searchResults[i].AccountID == accountID {
+			m.searchResults[i].IsRead = true
+		}
+	}
 	m.updateList()
 }
 
@@ -1620,6 +1650,11 @@ func (m *Inbox) MarkEmailAsUnread(uid uint32, accountID string) {
 				emails[i].IsRead = false
 				break
 			}
+		}
+	}
+	for i := range m.searchResults {
+		if m.searchResults[i].UID == uid && m.searchResults[i].AccountID == accountID {
+			m.searchResults[i].IsRead = false
 		}
 	}
 	m.updateList()
@@ -1887,3 +1922,10 @@ func (m *Inbox) openAdjacent(delta int) tea.Cmd {
 	}
 	return nil
 }
+
+// unreadFilterKey shows only unread email in the current folder (server-side
+// search, so older unread mail is included); pressing it again clears it.
+const (
+	unreadFilterKey = "U"
+	unreadQueryText = "is:unread"
+)

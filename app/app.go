@@ -1624,6 +1624,9 @@ func (m *Model) update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 		m.setFolderInboxDefaults()
 		m.loadFolderInboxCache(emailstore.FolderInbox)
 		m.current = m.folderInbox
+		// Show plugin keys (e.g. u: read/unread) in the help bar from the start.
+		m.updateSubordinates()
+		m.syncPluginKeyBindings()
 		m.updateCurrentWindowSize()
 		m.inboxOpen = true
 		// Entering the inbox restarts direct IDLE with the current settings.

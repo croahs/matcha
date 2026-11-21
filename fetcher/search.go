@@ -132,6 +132,9 @@ func buildSearchCriteria(query backend.SearchQuery) *imap.SearchCriteria {
 	if query.LargerThan > 0 {
 		criteria.Larger = int64(query.LargerThan)
 	}
+	if query.Unread {
+		criteria.NotFlag = append(criteria.NotFlag, imap.FlagSeen)
+	}
 	return criteria
 }
 
