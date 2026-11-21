@@ -139,8 +139,10 @@ func (d itemDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 	var styledDate string
 	if isSelected && !hasBG {
 		styledDate = selectedDateStyle.Render(dateStr)
-	} else {
+	} else if hasBG {
 		styledDate = statusStyle.Render(dateStr)
+	} else {
+		styledDate = lipgloss.NewStyle().Foreground(theme.ActiveTheme.MutedText).Render(dateStr)
 	}
 
 	// dateGap is the minimum space between the subject and a right-aligned date.
@@ -178,8 +180,17 @@ func (d itemDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 	}
 	subject = ansi.Truncate(subject, subjectBudget, ellipsis)
 
+	// Sender, subject and date get their own tone so the row reads at a glance:
+	// sender in full text color (accent when unread), subject slightly dimmed.
+	senderStyle, subjectStyle := statusStyle, statusStyle
+	if !hasBG {
+		subjectStyle = lipgloss.NewStyle().Foreground(theme.ActiveTheme.DimText).Bold(!i.isRead)
+		if i.isRead {
+			senderStyle = lipgloss.NewStyle()
+		}
+	}
 	left := plain(marker+prefix) + statusStyle.Render(statusIcon) + plain(" ") +
-		statusStyle.Render(sender) + plain(separator) + statusStyle.Render(subject)
+		senderStyle.Render(sender) + plain(separator) + subjectStyle.Render(subject)
 	if ansi.StringWidth(left) > leftBudget {
 		left = ansi.Truncate(left, leftBudget, ellipsis)
 	}
