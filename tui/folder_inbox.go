@@ -1546,3 +1546,12 @@ func fitBox(s string, width, height int) string {
 	}
 	return strings.Join(lines, "\n")
 }
+
+// OpenAdjacent moves the list cursor by delta emails (skipping rows that are
+// not emails) and opens the email it lands on. Returns nil at either end.
+func (m *FolderInbox) OpenAdjacent(delta int) tea.Cmd {
+	if m.inbox == nil {
+		return nil
+	}
+	return m.inbox.openAdjacent(delta)
+}

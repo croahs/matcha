@@ -493,6 +493,14 @@ func remoteImagesNotice(total, failed int) tea.Cmd {
 func (m *EmailView) handleEmailBodyKey(msg tea.KeyPressMsg) (bool, func() (tea.Model, tea.Cmd)) {
 	kb := config.Keybinds
 	switch msg.String() {
+	case "n", "p":
+		delta := 1
+		if msg.String() == "p" {
+			delta = -1
+		}
+		return true, func() (tea.Model, tea.Cmd) {
+			return m, func() tea.Msg { return NavigateEmailMsg{Delta: delta} }
+		}
 	case kb.Email.ToggleImages:
 		if view.ImageProtocolSupported() {
 			m.showImages = !m.showImages

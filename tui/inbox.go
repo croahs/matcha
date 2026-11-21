@@ -1876,3 +1876,14 @@ func firstNonEmpty(values ...string) string {
 	}
 	return ""
 }
+
+func (m *Inbox) openAdjacent(delta int) tea.Cmd {
+	items := m.list.VisibleItems()
+	for i := m.list.Index() + delta; i >= 0 && i < len(items); i += delta {
+		if it, ok := items[i].(item); ok && it.uid != 0 && !it.threadHeader {
+			m.list.Select(i)
+			return m.openSelected()
+		}
+	}
+	return nil
+}

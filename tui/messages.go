@@ -305,6 +305,12 @@ type DeleteEmailMsg struct {
 	Mailbox   MailboxKind
 }
 
+// NavigateEmailMsg asks to open the next (Delta 1) or previous (Delta -1)
+// email in the current folder list.
+type NavigateEmailMsg struct {
+	Delta int
+}
+
 type ArchiveEmailMsg struct {
 	UID       uint32
 	AccountID string

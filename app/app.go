@@ -3055,6 +3055,14 @@ func (m *Model) update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 		pa, notice := m.actionManager.HandleDeleteEmailMsg(msg, folderName)
 		return m, tea.Batch(flushCmd, m.actionManager.StartActionGracePeriod(pa, notice))
 
+	case tui.NavigateEmailMsg:
+		if m.folderInbox != nil {
+			if cmd := m.folderInbox.OpenAdjacent(msg.Delta); cmd != nil {
+				return m, cmd
+			}
+		}
+		return m, nil
+
 	case tui.ArchiveEmailMsg:
 		account := m.config.GetAccountByID(msg.AccountID)
 		if account == nil {
