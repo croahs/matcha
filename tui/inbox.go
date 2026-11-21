@@ -118,11 +118,8 @@ func (d itemDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 		contentWidth = 0
 	}
 
+	// The receiving address is left out: nearly all mail is to the same person.
 	prefix := fmt.Sprintf("%d. ", index+1)
-	// For "ALL" view, show account indicator instead of the bare number.
-	if i.accountEmail != "" {
-		prefix = fmt.Sprintf("%d. [%s] ", index+1, truncateEmail(i.accountEmail))
-	}
 
 	statusIcon, statusStyle := inboxStatusPresentation(i)
 	if hasBG {

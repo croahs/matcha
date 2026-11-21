@@ -844,10 +844,15 @@ func (m *EmailView) renderHeader(maxLines int) string {
 		cryptoStatus.WriteString(lipgloss.NewStyle().Foreground(theme.ActiveTheme.Accent).Render(" [📮 Patch]"))
 	}
 
-	header := fmt.Sprintf("To: %s | From: %s | Subject: %s%s",
-		normalizeInboxRowText(strings.Join(m.email.To, ", ")),
+	received := ""
+	if !m.email.Date.IsZero() {
+		received = " | Received: " + m.email.Date.Local().Format("Mon 2 Jan 2006 15:04")
+	}
+	header := fmt.Sprintf("From: %s | Subject: %s%s | To: %s%s",
 		normalizeInboxRowText(m.email.From),
 		normalizeInboxRowText(m.email.Subject),
+		received,
+		normalizeInboxRowText(strings.Join(m.email.To, ", ")),
 		cryptoStatus.String())
 	// Long headers wrap; cap them so the body keeps most of the space.
 	maxLines = max(1, maxLines)
