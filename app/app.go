@@ -153,6 +153,9 @@ type Model struct {
 	// pendingDraftID is the draft to delete once the email being sent is
 	// confirmed; a failed send keeps it.
 	pendingDraftID string
+	// pendingServerDraft is the server copy of a draft being sent, deleted
+	// on the same terms as pendingDraftID.
+	pendingServerDraft *tui.ServerDraftRef
 
 	badgeGen   int
 	badgeDirty bool
@@ -840,6 +843,7 @@ func (m *Model) deleteDraftAfterSend(draftID string) {
 
 // finishDraftAfterSend deletes the draft of a message once it is sent.
 func (m *Model) finishDraftAfterSend() {
+	m.deleteServerDraftAfterSend(m.quitAfterSend)
 	if id := m.pendingDraftID; id != "" {
 		m.pendingDraftID = ""
 		if m.quitAfterSend {
@@ -1340,6 +1344,9 @@ func (m *Model) quit() tea.Cmd {
 		// so its draft goes now (EmailDelayExpiredMsg will never arrive).
 		m.deleteDraftAfterSend(m.pendingDraftID)
 		m.pendingDraftID = ""
+	}
+	if m.pendingJobID != "" {
+		m.deleteServerDraftAfterSend(true)
 	}
 	flush := m.batchActionCmd()
 	m.shutdownService()
@@ -2095,6 +2102,31 @@ func (m *Model) update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 		m.syncPluginKeyBindings()
 		return m, m.current.Init()
 
+	case tui.EditServerDraftMsg:
+		account := m.config.GetAccountByID(msg.Email.AccountID)
+		if account == nil {
+			return m, m.showErrorCmd("Account not found for this draft")
+		}
+		return m, tea.Batch(
+			m.showInfoCmd("Opening draft…"),
+			loadServerDraftCmd(*account, msg.Email, m.folderName()),
+		)
+
+	case tui.ServerDraftReadyMsg:
+		if msg.Err != nil {
+			log.Printf("Failed to open server draft: %v", msg.Err)
+			return m, m.showErrorCmd(fmt.Sprintf("Could not open draft: %v", msg.Err))
+		}
+		composer := tui.NewComposerFromDraft(msg.Draft, m.config.Accounts, m.config.HideTips)
+		composer.SetShowCcBcc(m.config.ShowCcBccByDefault)
+		ref := msg.Ref
+		composer.SetServerDraft(&ref)
+		m.applySpellcheckOptions(composer)
+		m.current = composer
+		m.updateCurrentWindowSize()
+		m.syncPluginKeyBindings()
+		return m, m.current.Init()
+
 	case tui.DeleteSavedDraftMsg:
 		go func() {
 			if err := config.DeleteDraft(msg.DraftID); err != nil {
@@ -2141,6 +2173,7 @@ func (m *Model) update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 			emailIndex := m.store.GetEmailIndex(email.UID, email.AccountID)
 			sz := m.currentWindowSize()
 			emailView := tui.NewEmailView(email, emailIndex, sz.Width, sz.Height, mailbox, m.config.DisableImages)
+			emailView.SetDraft(isDraftsFolder(m.folderName()))
 			m.current = emailView
 			m.syncPluginStatus()
 			m.syncPluginKeyBindings()
@@ -2465,6 +2498,7 @@ func (m *Model) update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 		emailIndex := m.store.GetEmailIndex(msg.UID, msg.AccountID)
 		sz := m.currentWindowSize()
 		emailView := tui.NewEmailView(*email, emailIndex, sz.Width, sz.Height, msg.Mailbox, m.config.DisableImages)
+		emailView.SetDraft(isDraftsFolder(bodyFolder))
 		m.current = emailView
 		m.syncPluginStatus()
 		m.syncPluginKeyBindings()
@@ -2827,14 +2861,17 @@ func (m *Model) update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 		}
 		m.previousModel = m.current
 		var draftID string
+		var serverDraft *tui.ServerDraftRef
 		composer := getCurrentComposer(m.current)
 		if composer != nil {
 			draftID = composer.GetDraftID()
+			serverDraft = composer.ServerDraft()
 		}
 		// The send command waits for the service; starting it never blocks.
 		serviceCmd := m.ensureService()
 		m.sendNotice = m.sendEmailNotice(msg)
 		m.pendingDraftID = draftID
+		m.pendingServerDraft = serverDraft
 		m.current = tui.NewChoice()
 		m.updateCurrentWindowSize()
 		go m.saveContactsAfterSend(msg)
@@ -2884,6 +2921,7 @@ func (m *Model) update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 	case tui.UndoSendMsg:
 		m.sendNotice = ""
 		m.pendingDraftID = ""
+		m.pendingServerDraft = nil
 		if m.previousModel != nil {
 			m.current = m.previousModel
 			m.previousModel = nil
@@ -2949,6 +2987,7 @@ func (m *Model) update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 				m.current = m.previousModel
 				m.previousModel = nil
 				m.pendingDraftID = ""
+				m.pendingServerDraft = nil
 				m.updateCurrentWindowSize()
 				return m, m.showErrorCmd(fmt.Sprintf("Failed to send: %v", msg.Err))
 			}

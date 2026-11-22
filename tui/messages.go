@@ -583,6 +583,28 @@ type OpenDraftMsg struct {
 	Draft config.Draft
 }
 
+// ServerDraftRef identifies a draft stored in a server folder (such as
+// Gmail's [Gmail]/Drafts) so it can be removed once its edited copy is sent.
+type ServerDraftRef struct {
+	AccountID string
+	Folder    string
+	UID       uint32
+}
+
+// EditServerDraftMsg asks to open an email from a drafts folder in the
+// composer.
+type EditServerDraftMsg struct {
+	Email fetcher.Email
+}
+
+// ServerDraftReadyMsg carries a server draft converted for the composer, with
+// its attachments saved to local files.
+type ServerDraftReadyMsg struct {
+	Draft config.Draft
+	Ref   ServerDraftRef
+	Err   error
+}
+
 // DeleteDraftMsg signals that a draft should be deleted.
 type DeleteSavedDraftMsg struct {
 	DraftID string

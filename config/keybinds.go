@@ -63,6 +63,7 @@ type EmailKeys struct {
 	FocusAttachments string `json:"focus_attachments"`
 	ApplyPatch       string `json:"apply_patch"`
 	SendPatch        string `json:"send_patch"`
+	EditDraft        string `json:"edit_draft"`
 }
 
 type ComposerKeys struct {
@@ -150,6 +151,7 @@ func ValidateKeybinds(kb KeybindsConfig) []string {
 			"focus_attachments":  kb.Email.FocusAttachments,
 			"apply_patch":        kb.Email.ApplyPatch,
 			"send_patch":         kb.Email.SendPatch,
+			"edit_draft":         kb.Email.EditDraft,
 		},
 		"composer": {
 			"undo_send":       kb.Composer.UndoSend,

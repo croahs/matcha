@@ -266,6 +266,9 @@ type Composer struct {
 
 	// Draft persistence
 	draftID string
+	// serverDraft is the server copy this composer was opened from; it is
+	// deleted once the message is sent.
+	serverDraft *ServerDraftRef
 
 	// CC/BCC visibility
 	showCcBcc bool
@@ -2451,6 +2454,16 @@ func (m *Composer) GetDraftID() string {
 // SetDraftID sets the draft ID (for loading existing drafts).
 func (m *Composer) SetDraftID(id string) {
 	m.draftID = id
+}
+
+// ServerDraft returns the server draft this composer was opened from, or nil.
+func (m *Composer) ServerDraft() *ServerDraftRef {
+	return m.serverDraft
+}
+
+// SetServerDraft records the server draft to delete after a successful send.
+func (m *Composer) SetServerDraft(ref *ServerDraftRef) {
+	m.serverDraft = ref
 }
 
 // GetTo returns the current To field value.

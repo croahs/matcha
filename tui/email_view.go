@@ -95,6 +95,9 @@ type EmailView struct {
 	// readOnly disables message actions (reply, delete, …); used when the
 	// email is shown next to a reply in progress.
 	readOnly bool
+	// isDraft marks an email shown from a drafts folder, which can be opened
+	// in the composer.
+	isDraft bool
 }
 
 func NewEmailView(email fetcher.Email, emailIndex, width, height int, mailbox MailboxKind, disableImages bool) *EmailView {
@@ -501,6 +504,13 @@ func (m *EmailView) handleEmailBodyKey(msg tea.KeyPressMsg) (bool, func() (tea.M
 		return true, func() (tea.Model, tea.Cmd) {
 			return m, func() tea.Msg { return NavigateEmailMsg{Delta: delta} }
 		}
+	case kb.Email.EditDraft:
+		if m.isDraft {
+			email := m.email
+			return true, func() (tea.Model, tea.Cmd) {
+				return m, func() tea.Msg { return EditServerDraftMsg{Email: email} }
+			}
+		}
 	case kb.Email.ToggleImages:
 		if view.ImageProtocolSupported() {
 			m.showImages = !m.showImages
@@ -893,6 +903,10 @@ func (m *EmailView) renderHelp() string {
 	}
 
 	var shortcuts strings.Builder
+	if m.isDraft {
+		shortcuts.WriteString(helpItem("", kbKey(kb.Email.EditDraft, "e"), "edit draft").String())
+		shortcuts.WriteString(helpSeparator)
+	}
 	shortcuts.WriteString(joinHelp(
 		helpItem("", "n/p", "next/prev"),
 		helpItem("", kbKey(kb.Email.Archive, "a"), "archive"),
@@ -993,6 +1007,11 @@ func (m *EmailView) GetAccountID() string {
 // GetMailbox returns the mailbox kind for this email view
 func (m *EmailView) GetMailbox() MailboxKind {
 	return m.mailbox
+}
+
+// SetDraft marks the email as a server draft that can be edited and sent.
+func (m *EmailView) SetDraft(isDraft bool) {
+	m.isDraft = isDraft
 }
 
 // IsPreviewMode reports whether this EmailView is rendering inside the split
