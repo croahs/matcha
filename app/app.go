@@ -69,6 +69,9 @@ type clearPluginNotifMsg struct{ gen int }
 // badgeSyncMsg triggers a debounced unread-badge update.
 type badgeSyncMsg struct{ gen int }
 
+// folderCountsSyncMsg triggers a debounced refetch of the folder unread counts.
+type folderCountsSyncMsg struct{ gen int }
+
 // serviceReadyMsg reports that a mail service started in the background has
 // connected.
 type serviceReadyMsg struct{ svc daemonclient.Service }
@@ -159,6 +162,8 @@ type Model struct {
 
 	badgeGen   int
 	badgeDirty bool
+
+	folderCountsGen int
 
 	// subs tracks the daemon's new-mail subscriptions for the open folder.
 	subs *folderSubscriptions
@@ -525,6 +530,16 @@ func (m *Model) syncUnreadBadgeCmd() tea.Cmd {
 	m.badgeGen++
 	gen := m.badgeGen
 	return tea.Tick(500*time.Millisecond, func(time.Time) tea.Msg { return badgeSyncMsg{gen: gen} })
+}
+
+// syncFolderCountsCmd refetches the sidebar's unread counts from the server
+// shortly after a read/unread change has been applied there. The counts are
+// otherwise only fetched when the inbox opens. Bursts (paging through mail in
+// the split preview) collapse into one fetch.
+func (m *Model) syncFolderCountsCmd() tea.Cmd {
+	m.folderCountsGen++
+	gen := m.folderCountsGen
+	return tea.Tick(time.Second, func(time.Time) tea.Msg { return folderCountsSyncMsg{gen: gen} })
 }
 
 // noticeBox renders a small bordered notice that fits the screen width.
@@ -1238,6 +1253,11 @@ func (m *Model) reconcile(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		return m, m.unreadBadgeCmd()
+	case folderCountsSyncMsg:
+		if msg.gen != m.folderCountsGen || !m.inboxOpen {
+			return m, nil
+		}
+		return m, fetchcmd.FetchFoldersCmd(m.config)
 	case tea.WindowSizeMsg:
 		// The renderer repaints everything after a resize.
 		pre = m.graphics.Reset(false)
@@ -3134,14 +3154,14 @@ func (m *Model) update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 			log.Printf("Error marking email as read: %v", msg.Err)
 		}
 		m.syncUnreadBadge()
-		return m, nil
+		return m, m.syncFolderCountsCmd()
 
 	case tui.EmailMarkedUnreadMsg:
 		if msg.Err != nil {
 			log.Printf("Error marking email as unread: %v", msg.Err)
 		}
 		m.syncUnreadBadge()
-		return m, nil
+		return m, m.syncFolderCountsCmd()
 
 	case tui.EmailActionDoneMsg:
 		if msg.Err != nil {
