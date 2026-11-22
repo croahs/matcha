@@ -20,6 +20,10 @@ import (
 const (
 	InitialEmailLimit = 0
 	PaginationLimit   = 50
+	// HeadEmailLimit is how many of the newest emails a quick head fetch
+	// asks for. It takes about a second where a full INBOX fetch can take
+	// most of a minute, so new mail shows up long before the full list.
+	HeadEmailLimit = 50
 )
 
 // Seams for tests; production code always uses the fetcher functions.
@@ -235,10 +239,27 @@ func MergeFolders(accounts []config.Account, foldersByAccount map[string][]fetch
 	return merged
 }
 
+// RefreshFolderCmd refreshes a folder in two steps: a quick head fetch of the
+// newest emails, merged into the list on arrival, and the full fetch that
+// replaces the list when it completes.
+func RefreshFolderCmd(cfg *config.Config, folderName string) tea.Cmd {
+	return tea.Batch(FetchFolderHeadCmd(cfg, folderName), FetchFolderEmailsCmd(cfg, folderName))
+}
+
+// FetchFolderHeadCmd fetches the newest HeadEmailLimit emails of a folder
+// across all accounts, reported as a Partial FolderEmailsFetchedMsg.
+func FetchFolderHeadCmd(cfg *config.Config, folderName string) tea.Cmd {
+	return fetchFolderCmd(cfg, folderName, HeadEmailLimit, true)
+}
+
 // FetchFolderEmailsCmd fetches emails for a single folder across all accounts.
 // Accounts that fail are listed in FolderEmailsFetchedMsg.Errors instead of
 // being silently reported as empty.
 func FetchFolderEmailsCmd(cfg *config.Config, folderName string) tea.Cmd {
+	return fetchFolderCmd(cfg, folderName, InitialEmailLimit, false)
+}
+
+func fetchFolderCmd(cfg *config.Config, folderName string, limit uint32, partial bool) tea.Cmd {
 	accounts := snapshotAccounts(cfg)
 	return func() tea.Msg {
 		emailsByAccount := make(map[string][]fetcher.Email)
@@ -250,7 +271,7 @@ func FetchFolderEmailsCmd(cfg *config.Config, folderName string) tea.Cmd {
 			wg.Add(1)
 			go func(acc config.Account) {
 				defer wg.Done()
-				emails, err := fetchFolderEmails(&acc, folderName, InitialEmailLimit, 0)
+				emails, err := fetchFolderEmails(&acc, folderName, limit, 0)
 				mu.Lock()
 				defer mu.Unlock()
 				if err != nil {
@@ -276,6 +297,7 @@ func FetchFolderEmailsCmd(cfg *config.Config, folderName string) tea.Cmd {
 			Emails:     allEmails,
 			FolderName: folderName,
 			Errors:     errs,
+			Partial:    partial,
 		}
 	}
 }

@@ -722,7 +722,7 @@ func (m *Model) handleDaemonEvent(event *daemonrpc.Event) []tea.Cmd {
 		if err := json.Unmarshal(event.Data, &ev); err == nil {
 			m.notifyNewMail(ev.AccountID, ev.Folder)
 			if m.folderInbox != nil && m.folderInbox.GetCurrentFolder() == ev.Folder {
-				cmds = append(cmds, fetchcmd.FetchFolderEmailsCmd(m.config, ev.Folder))
+				cmds = append(cmds, fetchcmd.RefreshFolderCmd(m.config, ev.Folder))
 			}
 		}
 	case daemonrpc.EventSendFailed:
@@ -734,7 +734,7 @@ func (m *Model) handleDaemonEvent(event *daemonrpc.Event) []tea.Cmd {
 		var ev daemonrpc.SyncCompleteEvent
 		if err := json.Unmarshal(event.Data, &ev); err == nil {
 			if m.folderInbox != nil && m.folderInbox.GetCurrentFolder() == ev.Folder {
-				cmds = append(cmds, fetchcmd.FetchFolderEmailsCmd(m.config, ev.Folder))
+				cmds = append(cmds, fetchcmd.RefreshFolderCmd(m.config, ev.Folder))
 			}
 		}
 	}
@@ -1048,7 +1048,7 @@ func (m *Model) cacheFolderEmailBodies(folderName string, emails []fetcher.Email
 func (m *Model) refreshFolderEmails(folderName string) tea.Cmd {
 	delete(m.store.FolderEmails, folderName)
 	m.folderInbox.SetRefreshing(true)
-	return fetchcmd.FetchFolderEmailsCmd(m.config, folderName)
+	return fetchcmd.RefreshFolderCmd(m.config, folderName)
 }
 
 func (m *Model) fetchCurrentFolderEmails(folderName string) tea.Cmd {
@@ -1059,10 +1059,10 @@ func (m *Model) fetchCurrentFolderEmails(folderName string) tea.Cmd {
 	if diskCached := emailstore.LoadFolderEmailsFromCache(folderName); len(diskCached) > 0 {
 		m.store.FolderEmails[folderName] = diskCached
 		m.setFolderInboxEmails(folderName, diskCached)
-		return tea.Batch(fetchcmd.FetchFolderEmailsCmd(m.config, folderName), m.pluginNotifyCmd())
+		return tea.Batch(fetchcmd.RefreshFolderCmd(m.config, folderName), m.pluginNotifyCmd())
 	}
 	m.folderInbox.SetLoadingEmails(true)
-	return tea.Batch(fetchcmd.FetchFolderEmailsCmd(m.config, folderName), m.pluginNotifyCmd())
+	return tea.Batch(fetchcmd.RefreshFolderCmd(m.config, folderName), m.pluginNotifyCmd())
 }
 
 func (m *Model) markEmailReadAndQueue(accountID string, uid uint32, suppress bool) tea.Cmd {
@@ -1661,7 +1661,7 @@ func (m *Model) update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 		batchCmds := []tea.Cmd{
 			m.current.Init(),
 			fetchcmd.FetchFoldersCmd(m.config),
-			fetchcmd.FetchFolderEmailsCmd(m.config, emailstore.FolderInbox),
+			fetchcmd.RefreshFolderCmd(m.config, emailstore.FolderInbox),
 			// Connecting to the mail service can take seconds; mail loads
 			// meanwhile and new-mail notifications start once it is ready.
 			m.ensureService(),
@@ -1840,8 +1840,15 @@ func (m *Model) update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 		if len(previous) == 0 {
 			previous = emailstore.LoadFolderEmailsFromCache(msg.FolderName)
 		}
-		// Accounts whose fetch failed keep their known mail instead of vanishing.
-		emails := emailstore.MergeFolderFetch(previous, msg.Emails, msg.Errors)
+		var emails []fetcher.Email
+		if msg.Partial {
+			// A head fetch only covers the newest emails; the full fetch that
+			// follows reports errors and prunes caches.
+			emails = emailstore.MergeFolderHead(previous, msg.Emails)
+		} else {
+			// Accounts whose fetch failed keep their known mail instead of vanishing.
+			emails = emailstore.MergeFolderFetch(previous, msg.Emails, msg.Errors)
+		}
 		if m.plugins != nil {
 			// Only mail that actually arrived, not the whole folder on every refresh.
 			for _, email := range emailstore.NewEmails(previous, msg.Emails) {
@@ -1850,9 +1857,13 @@ func (m *Model) update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 			}
 		}
 		m.store.FolderEmails[msg.FolderName] = emails
-		m.cacheFolderEmailBodies(msg.FolderName, emails, msg.Errors)
 		var errCmd tea.Cmd
-		if len(msg.Errors) > 0 {
+		if msg.Partial {
+			emailstore.SaveFolderEmailsAsync(msg.FolderName, emails)
+		} else {
+			m.cacheFolderEmailBodies(msg.FolderName, emails, msg.Errors)
+		}
+		if len(msg.Errors) > 0 && !msg.Partial {
 			errCmd = m.showErrorCmd(fmt.Sprintf("Could not refresh %s for %d account(s); showing cached mail", msg.FolderName, len(msg.Errors)))
 		}
 		if m.folderInbox.GetCurrentFolder() != msg.FolderName {
@@ -1983,13 +1994,13 @@ func (m *Model) update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 		if m.folderInbox == nil {
 			return m, nil
 		}
-		return m, fetchcmd.FetchFolderEmailsCmd(m.config, m.folderInbox.GetCurrentFolder())
+		return m, fetchcmd.RefreshFolderCmd(m.config, m.folderInbox.GetCurrentFolder())
 
 	case tui.IdleNewMailMsg:
 		m.notifyNewMail(msg.AccountID, msg.FolderName)
 		if m.folderInbox != nil && m.folderInbox.GetCurrentFolder() == msg.FolderName {
 			return m, tea.Batch(
-				fetchcmd.FetchFolderEmailsCmd(m.config, msg.FolderName),
+				fetchcmd.RefreshFolderCmd(m.config, msg.FolderName),
 				idledaemon.ListenForIdleUpdates(m.idleUpdates),
 			)
 		}

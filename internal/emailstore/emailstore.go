@@ -355,6 +355,25 @@ func MergeFolderFetch(previous, fetched []fetcher.Email, failed map[string]error
 	return merged
 }
 
+// MergeFolderHead folds a head fetch (the newest emails of a folder) into
+// the known list: fetched emails replace their known copies and new ones are
+// added. Emails outside the head are kept as they are until the full fetch
+// replaces the list. The result is sorted newest first.
+func MergeFolderHead(previous, head []fetcher.Email) []fetcher.Email {
+	fresh := make(map[string]struct{}, len(head))
+	for _, e := range head {
+		fresh[emailKey(e)] = struct{}{}
+	}
+	merged := slices.Clone(head)
+	for _, e := range previous {
+		if _, ok := fresh[emailKey(e)]; !ok {
+			merged = append(merged, e)
+		}
+	}
+	SortNewestFirst(merged)
+	return merged
+}
+
 // CacheFolderSnapshot persists a folder's email list and prunes the folder's
 // body cache in the background. accountIDs are the configured accounts;
 // accounts in failed are left untouched (their fetch did not tell us which

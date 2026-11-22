@@ -131,3 +131,23 @@ func TestCommandsSnapshotAccounts(t *testing.T) {
 		t.Fatalf("command saw accounts %v, want the snapshot a,b,c", ids)
 	}
 }
+
+// The head fetch asks for the newest HeadEmailLimit emails and is marked
+// Partial, so the app merges it instead of replacing the folder list.
+func TestFetchFolderHeadIsPartial(t *testing.T) {
+	orig := fetchFolderEmails
+	t.Cleanup(func() { fetchFolderEmails = orig })
+	var gotLimit uint32
+	fetchFolderEmails = func(acc *config.Account, _ string, limit, _ uint32) ([]fetcher.Email, error) {
+		gotLimit = limit
+		return []fetcher.Email{{UID: 9, AccountID: acc.ID}}, nil
+	}
+	msg := FetchFolderHeadCmd(testConfig("a"), "INBOX")().(tui.FolderEmailsFetchedMsg)
+	if !msg.Partial || gotLimit != HeadEmailLimit || len(msg.Emails) != 1 {
+		t.Fatalf("head = %+v (limit %d), want Partial with limit %d", msg, gotLimit, HeadEmailLimit)
+	}
+	full := FetchFolderEmailsCmd(testConfig("a"), "INBOX")().(tui.FolderEmailsFetchedMsg)
+	if full.Partial || gotLimit != InitialEmailLimit {
+		t.Fatalf("full fetch must not be Partial: %+v (limit %d)", full, gotLimit)
+	}
+}

@@ -141,3 +141,24 @@ func TestSaveFolderEmailsAsyncNewestWins(t *testing.T) {
 		t.Fatalf("stale snapshot overwrote newest: %d emails", got)
 	}
 }
+
+// A head fetch adds new mail and refreshes known copies without dropping
+// the older emails it did not cover.
+func TestMergeFolderHead(t *testing.T) {
+	now := time.Now()
+	previous := []fetcher.Email{
+		{UID: 2, AccountID: "a", Date: now.Add(-time.Hour), IsRead: false},
+		{UID: 1, AccountID: "a", Date: now.Add(-2 * time.Hour)},
+	}
+	head := []fetcher.Email{
+		{UID: 3, AccountID: "a", Date: now},
+		{UID: 2, AccountID: "a", Date: now.Add(-time.Hour), IsRead: true},
+	}
+	got := MergeFolderHead(previous, head)
+	if len(got) != 3 || got[0].UID != 3 || got[1].UID != 2 || got[2].UID != 1 {
+		t.Fatalf("MergeFolderHead = %+v, want UIDs 3,2,1", got)
+	}
+	if !got[1].IsRead {
+		t.Errorf("known email not refreshed from head: %+v", got[1])
+	}
+}

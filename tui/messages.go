@@ -681,6 +681,9 @@ type FolderEmailsFetchedMsg struct {
 	// Failed accounts contribute no emails, so callers must keep their
 	// previously known emails and must not persist or prune caches for them.
 	Errors map[string]error
+	// Partial marks a head fetch: Emails holds only the newest emails, so
+	// callers merge them into the known list instead of replacing it.
+	Partial bool
 }
 
 // FolderEmailsAppendedMsg signals that more emails from a folder have been fetched (pagination).
