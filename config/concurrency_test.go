@@ -75,7 +75,7 @@ func TestConcurrentFolderCacheWritesKeepEverything(t *testing.T) {
 			defer wg.Done()
 			id := fmt.Sprintf("acct-%d", i)
 			for r := 0; r < 10; r++ {
-				if err := SaveAccountFolders(id, []string{"INBOX", "Sent"}, map[string]int{"INBOX": i}); err != nil {
+				if err := SaveAccountFolders(id, []string{"INBOX", "Sent"}, map[string]int{"INBOX": i}, nil); err != nil {
 					t.Errorf("SaveAccountFolders: %v", err)
 				}
 			}
@@ -103,7 +103,7 @@ func TestConcurrentFolderCacheWritesKeepEverything(t *testing.T) {
 		t.Fatal("threading override lost")
 	}
 	for i := 0; i < accounts; i++ {
-		folders, _ := GetCachedFolders(fmt.Sprintf("acct-%d", i))
+		folders := cachedFolderNames(fmt.Sprintf("acct-%d", i))
 		if len(folders) != 2 {
 			t.Fatalf("acct-%d folders = %v", i, folders)
 		}
@@ -154,10 +154,10 @@ func TestCorruptFolderCacheHeals(t *testing.T) {
 	if err := os.WriteFile(path, []byte(`{"accounts":[]}}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := SaveAccountFolders("a", []string{"INBOX"}, nil); err != nil {
+	if err := SaveAccountFolders("a", []string{"INBOX"}, nil, nil); err != nil {
 		t.Fatalf("SaveAccountFolders on corrupt cache: %v", err)
 	}
-	if folders, _ := GetCachedFolders("a"); len(folders) != 1 {
+	if folders := cachedFolderNames("a"); len(folders) != 1 {
 		t.Fatalf("folders = %v", folders)
 	}
 }
@@ -292,17 +292,17 @@ func TestConcurrentBodyCacheUse(t *testing.T) {
 
 func TestAdjustCachedUnread(t *testing.T) {
 	isolateHome(t)
-	if err := SaveAccountFolders("a", []string{"INBOX"}, map[string]int{"INBOX": 2}); err != nil {
+	if err := SaveAccountFolders("a", []string{"INBOX"}, map[string]int{"INBOX": 2}, nil); err != nil {
 		t.Fatal(err)
 	}
-	if err := SaveAccountFolders("b", []string{"INBOX", "Work"}, map[string]int{"INBOX": 5}); err != nil {
+	if err := SaveAccountFolders("b", []string{"INBOX", "Work"}, map[string]int{"INBOX": 5}, nil); err != nil {
 		t.Fatal(err)
 	}
 	if err := AdjustCachedUnread("a", "INBOX", -3); err != nil {
 		t.Fatal(err)
 	}
-	_, a := GetCachedFolders("a")
-	folders, b := GetCachedFolders("b")
+	a := cachedUnread("a")
+	folders, b := cachedFolderNames("b"), cachedUnread("b")
 	if a["INBOX"] != 0 || b["INBOX"] != 5 || len(folders) != 2 {
 		t.Fatalf("a=%v b=%v folders(b)=%v", a, b, folders)
 	}

@@ -62,16 +62,16 @@ func TestSaveLoadFolderCache_RoundTrip(t *testing.T) {
 func TestSaveAccountFolders_InvalidatesExistingEntry(t *testing.T) {
 	folderCacheTestSetup(t)
 
-	if err := SaveAccountFolders("acct-1", []string{"INBOX", "Sent"}, nil); err != nil {
+	if err := SaveAccountFolders("acct-1", []string{"INBOX", "Sent"}, nil, nil); err != nil {
 		t.Fatalf("first SaveAccountFolders: %v", err)
 	}
 
 	// Overwriting the same accountID must replace the folder list, not append.
-	if err := SaveAccountFolders("acct-1", []string{"INBOX", "Trash"}, nil); err != nil {
+	if err := SaveAccountFolders("acct-1", []string{"INBOX", "Trash"}, nil, nil); err != nil {
 		t.Fatalf("second SaveAccountFolders: %v", err)
 	}
 
-	folders, _ := GetCachedFolders("acct-1")
+	folders := cachedFolderNames("acct-1")
 	want := []string{"INBOX", "Trash"}
 	sort.Strings(folders)
 	sort.Strings(want)
@@ -91,10 +91,10 @@ func TestSaveAccountFolders_InvalidatesExistingEntry(t *testing.T) {
 func TestSaveAccountFolders_AddsNewAccount(t *testing.T) {
 	folderCacheTestSetup(t)
 
-	if err := SaveAccountFolders("acct-1", []string{"INBOX"}, nil); err != nil {
+	if err := SaveAccountFolders("acct-1", []string{"INBOX"}, nil, nil); err != nil {
 		t.Fatalf("SaveAccountFolders acct-1: %v", err)
 	}
-	if err := SaveAccountFolders("acct-2", []string{"INBOX", "Spam"}, nil); err != nil {
+	if err := SaveAccountFolders("acct-2", []string{"INBOX", "Spam"}, nil, nil); err != nil {
 		t.Fatalf("SaveAccountFolders acct-2: %v", err)
 	}
 
@@ -105,10 +105,10 @@ func TestSaveAccountFolders_AddsNewAccount(t *testing.T) {
 	if len(cache.Accounts) != 2 {
 		t.Errorf("accounts: got %d, want 2", len(cache.Accounts))
 	}
-	if folders, _ := GetCachedFolders("acct-1"); !reflect.DeepEqual(folders, []string{"INBOX"}) {
+	if folders := cachedFolderNames("acct-1"); !reflect.DeepEqual(folders, []string{"INBOX"}) {
 		t.Errorf("acct-1: got %v", folders)
 	}
-	if folders, _ := GetCachedFolders("acct-2"); !reflect.DeepEqual(folders, []string{"INBOX", "Spam"}) {
+	if folders := cachedFolderNames("acct-2"); !reflect.DeepEqual(folders, []string{"INBOX", "Spam"}) {
 		t.Errorf("acct-2: got %v", folders)
 	}
 }
@@ -150,10 +150,10 @@ func TestSaveAccountFolders_RecoversFromCorruptCache(t *testing.T) {
 	// SaveAccountFolders treats a load error as "start fresh" (see the
 	// `cache = &FolderCache{}` fall-back) so a corrupt file must be
 	// silently replaced with a valid one, not fail the whole save.
-	if err := SaveAccountFolders("acct-1", []string{"INBOX"}, nil); err != nil {
+	if err := SaveAccountFolders("acct-1", []string{"INBOX"}, nil, nil); err != nil {
 		t.Fatalf("SaveAccountFolders should recover from corrupt cache: %v", err)
 	}
-	if folders, _ := GetCachedFolders("acct-1"); !reflect.DeepEqual(folders, []string{"INBOX"}) {
+	if folders := cachedFolderNames("acct-1"); !reflect.DeepEqual(folders, []string{"INBOX"}) {
 		t.Errorf("after recovery: got %v, want [INBOX]", folders)
 	}
 }
@@ -177,17 +177,17 @@ func TestSaveFolderCache_EmptyAccounts(t *testing.T) {
 func TestSaveAccountFolders_EmptyFolderList(t *testing.T) {
 	folderCacheTestSetup(t)
 
-	if err := SaveAccountFolders("acct-1", nil, nil); err != nil {
+	if err := SaveAccountFolders("acct-1", nil, nil, nil); err != nil {
 		t.Fatalf("SaveAccountFolders nil folders: %v", err)
 	}
-	if err := SaveAccountFolders("acct-2", []string{}, nil); err != nil {
+	if err := SaveAccountFolders("acct-2", []string{}, nil, nil); err != nil {
 		t.Fatalf("SaveAccountFolders empty folders: %v", err)
 	}
 
-	if folders, _ := GetCachedFolders("acct-1"); len(folders) != 0 {
+	if folders := cachedFolderNames("acct-1"); len(folders) != 0 {
 		t.Errorf("acct-1: got %v, want empty", folders)
 	}
-	if folders, _ := GetCachedFolders("acct-2"); len(folders) != 0 {
+	if folders := cachedFolderNames("acct-2"); len(folders) != 0 {
 		t.Errorf("acct-2: got %v, want empty", folders)
 	}
 
@@ -206,10 +206,10 @@ func TestSaveAccountFolders_EmptyFolderList(t *testing.T) {
 func TestGetCachedFolders_MissingAccount(t *testing.T) {
 	folderCacheTestSetup(t)
 
-	if err := SaveAccountFolders("acct-1", []string{"INBOX"}, nil); err != nil {
+	if err := SaveAccountFolders("acct-1", []string{"INBOX"}, nil, nil); err != nil {
 		t.Fatalf("SaveAccountFolders: %v", err)
 	}
-	if folders, _ := GetCachedFolders("missing"); folders != nil {
+	if folders := cachedFolderNames("missing"); folders != nil {
 		t.Errorf("missing account: got %v, want nil", folders)
 	}
 }
@@ -218,7 +218,29 @@ func TestGetCachedFolders_NoCacheFile(t *testing.T) {
 	folderCacheTestSetup(t)
 
 	// No cache file has been written yet.
-	if folders, _ := GetCachedFolders("acct-1"); folders != nil {
+	if folders := cachedFolderNames("acct-1"); folders != nil {
 		t.Errorf("no cache file: got %v, want nil", folders)
+	}
+}
+
+func cachedFolderNames(accountID string) []string {
+	cached, _ := GetCachedFolders(accountID)
+	return cached.Folders
+}
+
+func cachedUnread(accountID string) map[string]int {
+	cached, _ := GetCachedFolders(accountID)
+	return cached.Unread
+}
+
+func TestSaveAccountFolders_KeepsNoSelect(t *testing.T) {
+	folderCacheTestSetup(t)
+
+	if err := SaveAccountFolders("acct-1", []string{"INBOX", "[Gmail]", "[Gmail]/Spam"}, nil, []string{"[Gmail]"}); err != nil {
+		t.Fatalf("SaveAccountFolders: %v", err)
+	}
+	cached, ok := GetCachedFolders("acct-1")
+	if !ok || !reflect.DeepEqual(cached.NoSelect, []string{"[Gmail]"}) {
+		t.Fatalf("NoSelect = %v (found %v), want [[Gmail]]", cached.NoSelect, ok)
 	}
 }

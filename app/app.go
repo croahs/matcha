@@ -652,7 +652,7 @@ func (m *Model) wantedSubscriptions(folder string) map[string]string {
 			want[acct.ID] = folder
 			continue
 		}
-		if folders, _ := config.GetCachedFolders(acct.ID); slices.Contains(folders, folder) {
+		if cached, _ := config.GetCachedFolders(acct.ID); slices.Contains(cached.Folders, folder) && !slices.Contains(cached.NoSelect, folder) {
 			want[acct.ID] = folder
 		}
 	}
@@ -1631,22 +1631,25 @@ func (m *Model) update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 		seen := make(map[string]bool)
 		var cachedFolders []string
 		unread := make(map[string]int)
+		noSelect := newNoSelectSet()
 		for _, acc := range m.config.Accounts {
-			folders, counters := config.GetCachedFolders(acc.ID)
-			for _, f := range folders {
+			cached, _ := config.GetCachedFolders(acc.ID)
+			for _, f := range cached.Folders {
 				if !seen[f] {
 					seen[f] = true
 					cachedFolders = append(cachedFolders, f)
 				}
-				if count, ok := counters[f]; ok {
+				if count, ok := cached.Unread[f]; ok {
 					unread[f] += count
 				}
+				noSelect.add(f, !slices.Contains(cached.NoSelect, f))
 			}
 		}
 		if !seen[emailstore.FolderInbox] {
 			cachedFolders = append([]string{emailstore.FolderInbox}, cachedFolders...)
 		}
 		m.folderInbox = tui.NewFolderInbox(cachedFolders, m.config.Accounts)
+		m.folderInbox.SetNoSelectFolders(noSelect.folders())
 		m.folderInbox.SetUnreadCounts(unread)
 		m.setFolderInboxDefaults()
 		m.loadFolderInboxCache(emailstore.FolderInbox)
@@ -1706,12 +1709,12 @@ func (m *Model) update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 				unread[f.Name] = int(f.Unread)
 			}
 		}
-		m.folderInbox.SetFolders(folderNames)
-		m.folderInbox.SetUnreadCounts(unread)
+		noSelect := newNoSelectSet()
 		type accountFolders struct {
-			id     string
-			names  []string
-			unread map[string]int
+			id       string
+			names    []string
+			unread   map[string]int
+			noSelect []string
 		}
 		toSave := make([]accountFolders, 0, len(msg.FoldersByAccount))
 		for accID, folders := range msg.FoldersByAccount {
@@ -1721,14 +1724,21 @@ func (m *Model) update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 				if f.Unread > 0 {
 					af.unread[f.Name] = int(f.Unread)
 				}
+				if !f.Selectable() {
+					af.noSelect = append(af.noSelect, f.Name)
+				}
+				noSelect.add(f.Name, f.Selectable())
 			}
 			toSave = append(toSave, af)
 		}
+		m.folderInbox.SetFolders(folderNames)
+		m.folderInbox.SetNoSelectFolders(noSelect.folders())
+		m.folderInbox.SetUnreadCounts(unread)
 		// The folder cache is one shared file: save sequentially, never in
 		// concurrent goroutines that overwrite each other.
 		go func() {
 			for _, af := range toSave {
-				if err := config.SaveAccountFolders(af.id, af.names, af.unread); err != nil {
+				if err := config.SaveAccountFolders(af.id, af.names, af.unread, af.noSelect); err != nil {
 					log.Printf("could not save folder cache for %s: %v", af.id, err)
 				}
 			}
@@ -1862,6 +1872,9 @@ func (m *Model) update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 			emailstore.SaveFolderEmailsAsync(msg.FolderName, emails)
 		} else {
 			m.cacheFolderEmailBodies(msg.FolderName, emails, msg.Errors)
+		}
+		for accID, err := range msg.Errors {
+			log.Printf("could not refresh %s for account %s: %v", msg.FolderName, accID, err)
 		}
 		if len(msg.Errors) > 0 && !msg.Partial {
 			errCmd = m.showErrorCmd(fmt.Sprintf("Could not refresh %s for %d account(s); showing cached mail", msg.FolderName, len(msg.Errors)))
@@ -3333,4 +3346,24 @@ func filterUnique(existing, incoming []fetcher.Email) []fetcher.Email {
 		}
 	}
 	return unique
+}
+
+// noSelectSet collects folders that cannot be opened in any account. A
+// folder that one account can open stays selectable in the merged sidebar.
+type noSelectSet map[string]bool
+
+func newNoSelectSet() noSelectSet { return noSelectSet{} }
+
+func (s noSelectSet) add(folder string, selectable bool) {
+	s[folder] = s[folder] || selectable
+}
+
+func (s noSelectSet) folders() map[string]bool {
+	out := make(map[string]bool)
+	for folder, selectable := range s {
+		if !selectable {
+			out[folder] = true
+		}
+	}
+	return out
 }

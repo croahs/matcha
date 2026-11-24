@@ -88,8 +88,11 @@ const (
 
 // FolderInbox combines a folder sidebar with an email list.
 type FolderInbox struct {
-	folders         []string
-	unread          map[string]int
+	folders []string
+	unread  map[string]int
+	// noSelect holds folders that only group others (Gmail's "[Gmail]").
+	// They are drawn as headings and never opened.
+	noSelect        map[string]bool
 	activeFolderIdx int
 	currentFolder   string
 	inbox           *Inbox
@@ -318,17 +321,9 @@ func (m *FolderInbox) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocycl
 				return m, nil
 			}
 		case kb.Folder.NextFolder:
-			m.activeFolderIdx++
-			if m.activeFolderIdx >= len(m.folders) {
-				m.activeFolderIdx = 0
-			}
-			return m, m.switchFolder()
+			return m, m.stepFolder(1)
 		case kb.Folder.PrevFolder:
-			m.activeFolderIdx--
-			if m.activeFolderIdx < 0 {
-				m.activeFolderIdx = len(m.folders) - 1
-			}
-			return m, m.switchFolder()
+			return m, m.stepFolder(-1)
 		case kb.Global.Cancel:
 			// Close split preview if open
 			if m.previewPane != nil {
@@ -676,22 +671,10 @@ func (m *FolderInbox) updateJumpOverlay(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case keyEnter:
 			list := m.getJumpList()
 			if len(list) > 0 && m.jumpTargetIdx < len(list) {
-				var targetFolder string
-				if len(m.jumpFiltered) > 0 {
-					targetFolder = m.folders[m.jumpFiltered[m.jumpTargetIdx]]
-				} else {
-					targetFolder = m.folders[m.jumpTargetIdx]
-				}
+				m.activeFolderIdx = list[m.jumpTargetIdx]
 				m.jumpingToFolder = false
 				m.jumpFilterInput.SetValue("")
 				m.jumpFiltered = nil
-				// Find the index of the target folder
-				for i, f := range m.folders {
-					if f == targetFolder {
-						m.activeFolderIdx = i
-						break
-					}
-				}
 				return m, m.switchFolder()
 			}
 		}
@@ -709,6 +692,9 @@ func (m *FolderInbox) applyJumpFilter() {
 
 	m.jumpFiltered = m.jumpFiltered[:0]
 	for i, folder := range m.folders {
+		if m.noSelect[folder] {
+			continue
+		}
 		if strings.Contains(strings.ToLower(folder), query) {
 			m.jumpFiltered = append(m.jumpFiltered, i)
 		}
@@ -720,10 +706,12 @@ func (m *FolderInbox) getJumpList() []int {
 	if len(m.jumpFiltered) > 0 {
 		return m.jumpFiltered
 	}
-	// Return indices for all folders
-	all := make([]int, len(m.folders))
-	for i := range m.folders {
-		all[i] = i
+	// Return indices for all folders that can be opened
+	all := make([]int, 0, len(m.folders))
+	for i, folder := range m.folders {
+		if !m.noSelect[folder] {
+			all = append(all, i)
+		}
 	}
 	return all
 }
@@ -732,11 +720,24 @@ func (m *FolderInbox) getJumpList() []int {
 func (m *FolderInbox) moveFolderChoices() []string {
 	var choices []string
 	for _, f := range m.folders {
-		if f != m.currentFolder {
+		if f != m.currentFolder && !m.noSelect[f] {
 			choices = append(choices, f)
 		}
 	}
 	return choices
+}
+
+// stepFolder moves delta folders along the sidebar, wrapping around and
+// skipping folders that cannot be opened.
+func (m *FolderInbox) stepFolder(delta int) tea.Cmd {
+	n := len(m.folders)
+	for range n {
+		m.activeFolderIdx = ((m.activeFolderIdx+delta)%n + n) % n
+		if !m.noSelect[m.folders[m.activeFolderIdx]] {
+			return m.switchFolder()
+		}
+	}
+	return nil
 }
 
 func (m *FolderInbox) switchFolder() tea.Cmd {
@@ -848,7 +849,11 @@ func (m *FolderInbox) renderSidebar() string {
 	m.ensureActiveFolderVisible()
 	end := min(len(m.folders), m.sidebarOffset+m.sidebarFolderRows())
 	for i := m.sidebarOffset; i < end; i++ {
-		b.WriteString(m.renderFolderRow(m.folders[i], i == m.activeFolderIdx, contentWidth))
+		if m.noSelect[m.folders[i]] {
+			b.WriteString(folderStyle.Faint(true).Render(" " + folderIcon(m.folders[i]) + " " + m.formatFolderName(m.folders[i])))
+		} else {
+			b.WriteString(m.renderFolderRow(m.folders[i], i == m.activeFolderIdx, contentWidth))
+		}
 		if i < end-1 {
 			b.WriteString("\n")
 		}
@@ -1149,6 +1154,12 @@ func (m *FolderInbox) SetFolders(folders []string) {
 	}
 }
 
+// SetNoSelectFolders marks the folders that only group others and cannot
+// be opened.
+func (m *FolderInbox) SetNoSelectFolders(folders map[string]bool) {
+	m.noSelect = folders
+}
+
 func (m *FolderInbox) SetUnreadCounts(counts map[string]int) {
 	m.unread = counts
 }
@@ -1428,7 +1439,7 @@ func (m *FolderInbox) handleMouseClick(msg tea.MouseClickMsg) tea.Cmd {
 			return nil
 		}
 		idx := m.sidebarOffset + row
-		if idx >= len(m.folders) || idx == m.activeFolderIdx {
+		if idx >= len(m.folders) || idx == m.activeFolderIdx || m.noSelect[m.folders[idx]] {
 			return nil
 		}
 		m.activeFolderIdx = idx

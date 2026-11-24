@@ -128,6 +128,18 @@ type Folder struct {
 	Attributes []string
 }
 
+// Selectable reports whether the folder holds mail. \Noselect and
+// \NonExistent folders (like Gmail's "[Gmail]") only group other folders
+// and fail when selected.
+func (f Folder) Selectable() bool {
+	for _, attr := range f.Attributes {
+		if strings.EqualFold(attr, string(imap.MailboxAttrNoSelect)) || strings.EqualFold(attr, string(imap.MailboxAttrNonExistent)) {
+			return false
+		}
+	}
+	return true
+}
+
 // formatAddress returns "Name <email>" when a Name is present,
 // otherwise just "email".
 func formatAddress(addr imap.Address) string {
@@ -2177,7 +2189,7 @@ func FetchFolders(account *config.Account) ([]Folder, error) {
 	// be queried with STATUS.
 	if !hasListStatus {
 		for i := range folders {
-			if slices.Contains(folders[i].Attributes, string(imap.MailboxAttrNoSelect)) {
+			if !folders[i].Selectable() {
 				continue
 			}
 			status, err := c.Status(folders[i].Name, &imap.StatusOptions{NumUnseen: true}).Wait()

@@ -195,3 +195,21 @@ func TestFetchEmailsWithCustomServer(t *testing.T) {
 
 	t.Logf("Fetched %d emails from custom server %s", len(emails), customAccount.IMAPServer)
 }
+
+func TestFolderSelectable(t *testing.T) {
+	cases := []struct {
+		attrs []string
+		want  bool
+	}{
+		{nil, true},
+		{[]string{`\HasChildren`}, true},
+		{[]string{`\HasChildren`, `\Noselect`}, false},
+		{[]string{`\NoSelect`}, false},
+		{[]string{`\NonExistent`}, false},
+	}
+	for _, c := range cases {
+		if got := (Folder{Attributes: c.attrs}).Selectable(); got != c.want {
+			t.Errorf("Selectable(%v) = %v, want %v", c.attrs, got, c.want)
+		}
+	}
+}

@@ -17,7 +17,9 @@ type CachedFolders struct {
 	AccountID string         `json:"account_id"`
 	Folders   []string       `json:"folders"`
 	Unread    map[string]int `json:"unread_counts,omitempty"`
-	UpdatedAt time.Time      `json:"updated_at"`
+	// NoSelect lists folders that only group others and cannot be opened.
+	NoSelect  []string  `json:"noselect,omitempty"`
+	UpdatedAt time.Time `json:"updated_at"`
 }
 
 // FolderCache stores cached folders for all accounts.
@@ -75,18 +77,18 @@ func LoadFolderCache() (*FolderCache, error) {
 	return &cache, nil
 }
 
-// GetCachedFolders returns cached folder names for a specific account.
-func GetCachedFolders(accountID string) ([]string, map[string]int) {
+// GetCachedFolders returns the cached folder list for a specific account.
+func GetCachedFolders(accountID string) (CachedFolders, bool) {
 	cache, err := LoadFolderCache()
 	if err != nil {
-		return nil, nil
+		return CachedFolders{}, false
 	}
 	for _, acc := range cache.Accounts {
 		if acc.AccountID == accountID {
-			return acc.Folders, acc.Unread
+			return acc, true
 		}
 	}
-	return nil, nil
+	return CachedFolders{}, false
 }
 
 // updateFolderCache runs fn on folder_cache.json under the file lock and
@@ -113,10 +115,10 @@ func updateFolderCache(fn func(cache *FolderCache) bool) error {
 	return saveFolderCacheLocked(path, cache)
 }
 
-// SaveAccountFolders saves folder names for a specific account, merging into the existing cache.
-func SaveAccountFolders(accountID string, folders []string, unread map[string]int) error {
+// SaveAccountFolders saves the folder list of a specific account, merging into the existing cache.
+func SaveAccountFolders(accountID string, folders []string, unread map[string]int, noSelect []string) error {
 	return updateFolderCache(func(cache *FolderCache) bool {
-		saveAccountFoldersLocked(cache, accountID, folders, unread)
+		saveAccountFoldersLocked(cache, accountID, folders, unread, noSelect)
 		return true
 	})
 }
@@ -144,26 +146,21 @@ func AdjustCachedUnread(accountID, folder string, delta int) error {
 	})
 }
 
-func saveAccountFoldersLocked(cache *FolderCache, accountID string, folders []string, unread map[string]int) {
-	found := false
+func saveAccountFoldersLocked(cache *FolderCache, accountID string, folders []string, unread map[string]int, noSelect []string) {
+	entry := CachedFolders{
+		AccountID: accountID,
+		Folders:   folders,
+		Unread:    unread,
+		NoSelect:  noSelect,
+		UpdatedAt: time.Now(),
+	}
 	for i, acc := range cache.Accounts {
 		if acc.AccountID == accountID {
-			cache.Accounts[i].Folders = folders
-			cache.Accounts[i].Unread = unread
-			cache.Accounts[i].UpdatedAt = time.Now()
-			found = true
-			break
+			cache.Accounts[i] = entry
+			return
 		}
 	}
-
-	if !found {
-		cache.Accounts = append(cache.Accounts, CachedFolders{
-			AccountID: accountID,
-			Folders:   folders,
-			Unread:    unread,
-			UpdatedAt: time.Now(),
-		})
-	}
+	cache.Accounts = append(cache.Accounts, entry)
 }
 
 func removeAccountFromFolderCache(accountID string) error {

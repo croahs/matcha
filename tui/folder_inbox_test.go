@@ -122,3 +122,30 @@ func TestSearchOverlayKeysNotIntercepted(t *testing.T) {
 		t.Fatalf("search input should contain typed character, got %q", got)
 	}
 }
+
+// TestFolderInboxSkipsNoSelectFolders: Gmail's "[Gmail]" only groups other
+// folders. Stepping through the sidebar must pass over it in both directions,
+// since selecting it fails on the server.
+func TestFolderInboxSkipsNoSelectFolders(t *testing.T) {
+	fi := NewFolderInbox([]string{keyINBOX, "[Gmail]", "[Gmail]/All Mail"}, nil)
+	fi.SetNoSelectFolders(map[string]bool{"[Gmail]": true})
+
+	fi.stepFolder(1)
+	if got := fi.GetCurrentFolder(); got != "[Gmail]/All Mail" {
+		t.Fatalf("next folder = %q, want [Gmail]/All Mail", got)
+	}
+	fi.stepFolder(-1)
+	if got := fi.GetCurrentFolder(); got != keyINBOX {
+		t.Fatalf("previous folder = %q, want INBOX", got)
+	}
+	for _, i := range fi.getJumpList() {
+		if fi.folders[i] == "[Gmail]" {
+			t.Fatal("jump list offers [Gmail]")
+		}
+	}
+	for _, f := range fi.moveFolderChoices() {
+		if f == "[Gmail]" {
+			t.Fatal("move targets offer [Gmail]")
+		}
+	}
+}
