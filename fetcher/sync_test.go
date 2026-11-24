@@ -53,11 +53,13 @@ func TestNeedsFullSync(t *testing.T) {
 		t.Fatal("fresh state with CONDSTORE should sync incrementally")
 	}
 	cases := map[string]func() bool{
-		"no state":           func() bool { return needsFullSync(prev, false, sel, true, now) },
-		"no CONDSTORE":       func() bool { return needsFullSync(prev, true, sel, false, now) },
-		"no HIGHESTMODSEQ":   func() bool { return needsFullSync(prev, true, &imap.SelectData{UIDValidity: 7}, true, now) },
-		"UIDVALIDITY change": func() bool { return needsFullSync(prev, true, &imap.SelectData{UIDValidity: 8, HighestModSeq: 120}, true, now) },
-		"day since full":     func() bool { return needsFullSync(prev, true, sel, true, now.Add(fullSyncInterval)) },
+		"no state":         func() bool { return needsFullSync(prev, false, sel, true, now) },
+		"no CONDSTORE":     func() bool { return needsFullSync(prev, true, sel, false, now) },
+		"no HIGHESTMODSEQ": func() bool { return needsFullSync(prev, true, &imap.SelectData{UIDValidity: 7}, true, now) },
+		"UIDVALIDITY change": func() bool {
+			return needsFullSync(prev, true, &imap.SelectData{UIDValidity: 8, HighestModSeq: 120}, true, now)
+		},
+		"day since full": func() bool { return needsFullSync(prev, true, sel, true, now.Add(fullSyncInterval)) },
 	}
 	for name, full := range cases {
 		if !full() {
