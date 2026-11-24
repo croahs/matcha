@@ -63,8 +63,7 @@ func TestBodyCmdsCarryFolder(t *testing.T) {
 
 // A failing account must be reported, not silently turned into "no emails".
 func TestFetchFolderEmailsReportsErrors(t *testing.T) {
-	orig := fetchFolderEmails
-	t.Cleanup(func() { fetchFolderEmails = orig })
+	stubFolderSync(t)
 	now := time.Now()
 	fetchFolderEmails = func(acc *config.Account, _ string, _, _ uint32) ([]fetcher.Email, error) {
 		if acc.ID == "down" {
@@ -111,8 +110,7 @@ func TestMergeFoldersSumsUnread(t *testing.T) {
 // Commands must not alias cfg.Accounts: the UI goroutine can remove an
 // account (shifting the slice in place) while the command runs.
 func TestCommandsSnapshotAccounts(t *testing.T) {
-	orig := fetchFolderEmails
-	t.Cleanup(func() { fetchFolderEmails = orig })
+	stubFolderSync(t)
 	seen := make(chan string, 4)
 	fetchFolderEmails = func(acc *config.Account, _ string, _, _ uint32) ([]fetcher.Email, error) {
 		seen <- acc.ID
@@ -135,8 +133,7 @@ func TestCommandsSnapshotAccounts(t *testing.T) {
 // The head fetch asks for the newest HeadEmailLimit emails and is marked
 // Partial, so the app merges it instead of replacing the folder list.
 func TestFetchFolderHeadIsPartial(t *testing.T) {
-	orig := fetchFolderEmails
-	t.Cleanup(func() { fetchFolderEmails = orig })
+	stubFolderSync(t)
 	var gotLimit uint32
 	fetchFolderEmails = func(acc *config.Account, _ string, limit, _ uint32) ([]fetcher.Email, error) {
 		gotLimit = limit
@@ -149,5 +146,16 @@ func TestFetchFolderHeadIsPartial(t *testing.T) {
 	full := FetchFolderEmailsCmd(testConfig("a"), "INBOX")().(tui.FolderEmailsFetchedMsg)
 	if full.Partial || gotLimit != InitialEmailLimit {
 		t.Fatalf("full fetch must not be Partial: %+v (limit %d)", full, gotLimit)
+	}
+}
+
+// stubFolderSync restores the fetch seams after the test and routes the full
+// folder sync through the fetchFolderEmails stub the test installs.
+func stubFolderSync(t *testing.T) {
+	t.Helper()
+	origFetch, origSync := fetchFolderEmails, syncFolderEmails
+	t.Cleanup(func() { fetchFolderEmails, syncFolderEmails = origFetch, origSync })
+	syncFolderEmails = func(acc *config.Account, folder string) ([]fetcher.Email, error) {
+		return fetchFolderEmails(acc, folder, InitialEmailLimit, 0)
 	}
 }
