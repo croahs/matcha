@@ -843,9 +843,10 @@ func TestItemDelegateKeepsSubjectWithinRowWidth(t *testing.T) {
 			t.Fatalf("long sender rendered %q", sender)
 		}
 
+		// Rows leave out the receiving address: nearly all mail is to the same person.
 		account := ansi.Strip(render(t, 120, 0, items[5], false, false))
-		if !strings.Contains(account, truncateEmail("verylongemail@gmail.com")) {
-			t.Fatalf("account indicator rendered %q", account)
+		if strings.Contains(account, truncateEmail("verylongemail@gmail.com")) {
+			t.Fatalf("row shows the receiving address: %q", account)
 		}
 		numbered := ansi.Strip(render(t, 80, 99, base("Tenth", "Ada <ada@example.com>"), false, false))
 		if !strings.Contains(numbered, "100.") {

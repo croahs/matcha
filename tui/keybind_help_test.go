@@ -72,7 +72,7 @@ func TestEmailHelpKeepsDefaultWording(t *testing.T) {
 	setKeybinds(t, func(_ *config.KeybindsConfig) {})
 
 	help := emailViewWithAttachment().renderHelp()
-	want := "\uf112 r: reply • \uf064 shift+r: reply all • \uf064 f: forward • \uea81 d: delete • \uea98 a: archive • \uf435 tab: focus attachments • \ueb06 esc: back to inbox"
+	want := "n/p: next/prev • \uea98 a: archive • \uf112 r: reply • \uf064 shift+r: reply all • \uf064 f: forward • \uea81 d: delete • \uf435 tab: focus attachments • \ueb06 esc: back to inbox"
 	if !strings.Contains(help, want) {
 		t.Errorf("default email help changed shape:\ngot:  %q\nwant: %q", help, want)
 	}
