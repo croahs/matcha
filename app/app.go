@@ -713,7 +713,10 @@ func (m *Model) forgetDirectWatches() {
 	}
 }
 
-// handleDaemonEvent reacts to one event pushed by the daemon.
+// handleDaemonEvent reacts to one event pushed by the daemon. Events refresh
+// only the newest emails: a full fetch per event (all headers of a large
+// folder) runs into Gmail's IMAP bandwidth limit. Opening a folder or a
+// manual refresh still fetches it in full.
 func (m *Model) handleDaemonEvent(event *daemonrpc.Event) []tea.Cmd {
 	var cmds []tea.Cmd
 	switch event.Type {
@@ -722,7 +725,7 @@ func (m *Model) handleDaemonEvent(event *daemonrpc.Event) []tea.Cmd {
 		if err := json.Unmarshal(event.Data, &ev); err == nil {
 			m.notifyNewMail(ev.AccountID, ev.Folder)
 			if m.folderInbox != nil && m.folderInbox.GetCurrentFolder() == ev.Folder {
-				cmds = append(cmds, fetchcmd.RefreshFolderCmd(m.config, ev.Folder))
+				cmds = append(cmds, fetchcmd.FetchFolderHeadCmd(m.config, ev.Folder))
 			}
 		}
 	case daemonrpc.EventSendFailed:
@@ -734,7 +737,7 @@ func (m *Model) handleDaemonEvent(event *daemonrpc.Event) []tea.Cmd {
 		var ev daemonrpc.SyncCompleteEvent
 		if err := json.Unmarshal(event.Data, &ev); err == nil {
 			if m.folderInbox != nil && m.folderInbox.GetCurrentFolder() == ev.Folder {
-				cmds = append(cmds, fetchcmd.RefreshFolderCmd(m.config, ev.Folder))
+				cmds = append(cmds, fetchcmd.FetchFolderHeadCmd(m.config, ev.Folder))
 			}
 		}
 	}
@@ -2000,7 +2003,7 @@ func (m *Model) update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 		m.notifyNewMail(msg.AccountID, msg.FolderName)
 		if m.folderInbox != nil && m.folderInbox.GetCurrentFolder() == msg.FolderName {
 			return m, tea.Batch(
-				fetchcmd.RefreshFolderCmd(m.config, msg.FolderName),
+				fetchcmd.FetchFolderHeadCmd(m.config, msg.FolderName),
 				idledaemon.ListenForIdleUpdates(m.idleUpdates),
 			)
 		}

@@ -244,3 +244,45 @@ func TestDaemon_GetProviderCreatesOnDemand(t *testing.T) {
 		t.Error("expected the cached provider to be reused")
 	}
 }
+
+func TestUpdateFolderCacheMergesHead(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CACHE_HOME", filepath.Join(home, ".cache"))
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
+
+	day := func(n int) time.Time { return time.Date(2026, 11, n, 12, 0, 0, 0, time.UTC) }
+	if err := config.SaveFolderEmailCache("INBOX", []config.CachedEmail{
+		{UID: 1, AccountID: "a", Subject: "old", Date: day(1)},
+		{UID: 2, AccountID: "a", Subject: "stale copy", Date: day(2)},
+		{UID: 2, AccountID: "b", Subject: "other account", Date: day(3)},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	d := &Daemon{}
+	if err := d.updateFolderCache("INBOX", "a", []config.CachedEmail{
+		{UID: 2, AccountID: "a", Subject: "fresh copy", Date: day(2), IsRead: true},
+		{UID: 3, AccountID: "a", Subject: "new", Date: day(4)},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := config.LoadFolderEmailCache("INBOX")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var subjects []string
+	for _, e := range got {
+		subjects = append(subjects, e.Subject)
+	}
+	want := []string{"new", "other account", "fresh copy", "old"}
+	if len(subjects) != len(want) {
+		t.Fatalf("subjects = %v, want %v", subjects, want)
+	}
+	for i := range want {
+		if subjects[i] != want[i] {
+			t.Fatalf("subjects = %v, want %v", subjects, want)
+		}
+	}
+}

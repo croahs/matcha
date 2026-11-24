@@ -6,6 +6,7 @@ import (
 	"log"
 	"net"
 	"os"
+	"slices"
 	"sort"
 	"sync"
 	"time"
@@ -20,6 +21,12 @@ import (
 )
 
 const inboxFolder = "INBOX"
+
+// syncHeadLimit is how many of the newest emails a background sync fetches.
+// Fetching every header of a large folder on each sync and IDLE event
+// (16 MB for a 44k-message Gmail INBOX) runs into Gmail's IMAP bandwidth
+// limit, after which Gmail delays every command by seconds ([THROTTLED]).
+const syncHeadLimit = 50
 
 // Daemon is the long-running background process that manages email
 // connections, caching, sync, and notifications.
@@ -389,7 +396,7 @@ func (d *Daemon) syncAllAccounts(ctx context.Context) {
 			continue
 		}
 
-		emails, err := p.FetchEmails(ctx, inboxFolder, 0, 0)
+		emails, err := p.FetchEmails(ctx, inboxFolder, syncHeadLimit, 0)
 		if err != nil {
 			log.Printf("daemon: sync %s failed: %v", acct.Email, err)
 			d.broadcastToSubscribers(acct.ID, inboxFolder, daemonrpc.EventSyncError, daemonrpc.SyncErrorEvent{
@@ -514,7 +521,7 @@ func (d *Daemon) fetchAndCache(accountID, folder string) {
 		return
 	}
 
-	emails, err := fetcher.FetchFolderEmails(acct, folder, 0, 0)
+	emails, err := fetcher.FetchFolderEmails(acct, folder, syncHeadLimit, 0)
 	if err != nil {
 		log.Printf("daemon: cache fetch for %s/%s failed: %v", accountID, folder, err)
 		return
@@ -552,24 +559,27 @@ func (d *Daemon) fetchAndCache(accountID, folder string) {
 	})
 }
 
-// updateFolderCache safely merges new emails for a specific account into the existing folder cache.
+// updateFolderCache merges a head fetch (the newest emails of one account)
+// into the folder cache: fetched emails replace their cached copies and new
+// ones are added. Older cached emails stay; the TUI's full fetch when a
+// folder is opened prunes what is gone.
 func (d *Daemon) updateFolderCache(folderName, accountID string, newEmails []config.CachedEmail) error {
 	d.cacheMu.Lock()
 	defer d.cacheMu.Unlock()
 
-	// Load existing cache
 	existing, _ := config.LoadFolderEmailCache(folderName) // Ignore error, assume empty if missing
 
-	// Filter out old emails for this account
-	var merged []config.CachedEmail
-	for _, e := range existing {
-		if e.AccountID != accountID {
-			merged = append(merged, e)
-		}
+	fresh := make(map[uint32]struct{}, len(newEmails))
+	for _, e := range newEmails {
+		fresh[e.UID] = struct{}{}
 	}
-
-	// Append new emails
-	merged = append(merged, newEmails...)
+	merged := slices.Clone(newEmails)
+	for _, e := range existing {
+		if _, ok := fresh[e.UID]; ok && e.AccountID == accountID {
+			continue
+		}
+		merged = append(merged, e)
+	}
 
 	// Sort newest first
 	sort.Slice(merged, func(i, j int) bool {
